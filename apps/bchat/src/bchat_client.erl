@@ -1,6 +1,8 @@
 -module(bchat_client).
 -behaviour(gen_server).
 
+-include("bchat.hrl").
+
 %% API
 -export([
     start_link/1
@@ -47,13 +49,9 @@ init(Name) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({test, Message}, _From, State) ->
-    io:format("Call: ~p~n", [Message]),
-    Reply = ok,
-    {reply, Reply, State};
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call(Request, _From, State) ->
+    ?INFO({unexpected_call, Request}),
+    {reply, ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -65,13 +63,11 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({test, Message}, State) ->
-    io:format("Cast: ~p~n", [Message]),
-    {noreply, State};
 handle_cast({msg, From, Room, Msg}, State) ->
     io:format("~p received msg from ~p (~p): ~p~n", [State, From, Room, Msg]),
     {noreply, State};
-handle_cast(_Msg, State) ->
+handle_cast(Msg, State) ->
+    ?INFO({unexpected_cast, Msg}),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -84,7 +80,8 @@ handle_cast(_Msg, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    ?INFO({unexpected_info, Info}),
     {noreply, State}.
 
 %%--------------------------------------------------------------------

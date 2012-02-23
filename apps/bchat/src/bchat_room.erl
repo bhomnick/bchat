@@ -1,6 +1,8 @@
 -module(bchat_room).
 -behaviour(gen_server).
 
+-include("bchat.hrl").
+
 %% API
 -export([start_link/1]).
 
@@ -67,9 +69,9 @@ handle_call({send_msg, Client, Msg}, _From, S=#state{history=H, clients=C, name=
         false ->
             {reply, not_member, S}
     end;
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call(Request, _From, State) ->
+    ?INFO({unexpected_call, Request}),
+    {reply, ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -84,9 +86,10 @@ handle_call(_Request, _From, State) ->
 handle_cast({test, Message}, State) ->
     io:format("Cast: ~p~n", [Message]),
     {noreply, State};
-handle_cast(_Msg, State) ->
+handle_cast(Msg, State) ->
+    ?INFO({unexpected_cast, Msg}),
     {noreply, State}.
-
+    
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -97,7 +100,8 @@ handle_cast(_Msg, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    ?INFO({unexpected_info, Info}),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
