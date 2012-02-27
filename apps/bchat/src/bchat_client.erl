@@ -12,6 +12,11 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
     terminate/2, code_change/3]).
 
+-record(state, {
+    name,
+    cache=[],
+    listener=none
+}).
 
 start_link(Name) ->
     gen_server:start_link(?MODULE, Name, []).
@@ -33,7 +38,7 @@ start_link(Name) ->
 %%--------------------------------------------------------------------
 init(Name) ->
     register(Name, self()),
-    {ok, Name}.
+    {ok, #state{name=Name}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -49,6 +54,16 @@ init(Name) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call({listen, Pid}, _From, S=#state{cache=C}) when C =/= [] ->
+    io:format("flushing~n"),
+    NewS = flush_cache(S#state{listener=Pid}),
+    {reply, ok, NewS};
+handle_call({listen, Pid}, _From, S) ->
+    {reply, ok, S#state{listener=Pid}};
+handle_call({unlisten, Pid}, _From, S=#state{listener=Pid}) ->
+    {reply, ok, S#state{listener=none}};
+handle_call({unlisten, _}, _From, S) ->
+    {reply, ok, S}; %% noop
 handle_call(Request, _From, State) ->
     ?INFO({unexpected_call, Request}),
     {reply, ok, State}.
@@ -63,9 +78,9 @@ handle_call(Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({msg, From, Room, Msg}, State) ->
-    io:format("~p received msg from ~p (~p): ~p~n", [State, From, Room, Msg]),
-    {noreply, State};
+handle_cast({msg, From, Room, Msg}, S=#state{cache=C}) ->
+    NewS = flush_cache(S#state{cache=[{From, Room, Msg}|C]}),
+    {noreply, NewS};
 handle_cast(Msg, State) ->
     ?INFO({unexpected_cast, Msg}),
     {noreply, State}.
@@ -112,3 +127,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+flush_cache(S=#state{listener=none}) ->
+    S;
+flush_cache(S=#state{listener=L, cache=C}) ->
+    L ! {reply, jsx:to_json([format_msg(M) || M <- C])},
+    S#state{listener=none, cache=[]}.
+
+%% Makes jsx happy!
+%% atom, atom, binary
+format_msg({From, Room, Msg}) ->
+    [
+        {<<"from">>, atom_to_binary(From, utf8)},
+        {<<"room">>, atom_to_binary(Room, utf8)},
+        {<<"msg">>, Msg}
+    ].
