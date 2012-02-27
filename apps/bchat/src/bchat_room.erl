@@ -11,10 +11,14 @@
     terminate/2, code_change/3]).
 
 -define(HISTORY_LEN, 5).
--record(state, {name, clients=sets:new(), history=queue:new()}).
+-record(state, {
+    uuid, 
+    clients=sets:new(), 
+    history=queue:new()
+}).
 
-start_link(Name) ->
-    gen_server:start_link(?MODULE, Name, []).
+start_link(Args) ->
+    gen_server:start_link(?MODULE, Args, []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -31,9 +35,9 @@ start_link(Name) ->
 %% {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init(Name) ->
-    register(Name, self()),
-    {ok, #state{name=Name}}.
+init(Uuid) ->
+    gproc:reg({n, l, {room, Uuid}}),
+    {ok, #state{uuid=Uuid}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -52,19 +56,19 @@ init(Name) ->
 handle_call({test, Message}, _From, State) ->
     io:format("Call: ~p~n", [Message]),
     {reply, ok, State};
-handle_call({join_room, Client}, _From, S=#state{clients=C, history=H, name=N}) ->
+handle_call({join_room, Client}, _From, S=#state{clients=C, history=H, uuid=U}) ->
     io:format("* Sending room history to ~p~n.", [Client]),
-    send_history(Client, H, N),
+    send_history(Client, H, U),
     NewS = S#state{clients=sets:add_element(Client, C)},
     {reply, ok, NewS};
 handle_call({leave_room, Client}, _From, S=#state{clients=C}) ->
     NewS = S#state{clients=sets:del_element(Client, C)},
     {reply, ok, NewS};
-handle_call({send_msg, Client, Msg}, _From, S=#state{history=H, clients=C, name=N}) ->
+handle_call({send_msg, Client, Msg}, _From, S=#state{history=H, clients=C, uuid=U}) ->
     case sets:is_element(Client, C) of
         true ->
             NewH = enqueue({Client, Msg}, H, ?HISTORY_LEN),
-            send_msgs(C, Client, N, Msg),
+            send_msgs(C, Client, U, Msg),
             {reply, ok, S#state{history=NewH}};
         false ->
             {reply, not_member, S}

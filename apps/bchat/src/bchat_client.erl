@@ -14,12 +14,13 @@
 
 -record(state, {
     name,
+    uuid,
     cache=[],
     listener=none
 }).
 
-start_link(Name) ->
-    gen_server:start_link(?MODULE, Name, []).
+start_link(Args) ->
+    gen_server:start_link(?MODULE, Args, []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -36,9 +37,9 @@ start_link(Name) ->
 %% {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init(Name) ->
-    register(Name, self()),
-    {ok, #state{name=Name}}.
+init({Name, Uuid}) ->
+    gproc:reg({n, l, {client, Uuid}}),
+    {ok, #state{name=Name, uuid=Uuid}}.
 
 %%--------------------------------------------------------------------
 %% @private

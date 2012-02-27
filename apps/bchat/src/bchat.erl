@@ -3,13 +3,21 @@
 
 %%% PUBLIC API
 
-%% Starts a new client process registered as atom `Name`.
-get_client(Name) when is_atom(Name) ->
-    start_proc({bchat_client_sup, Name}).
+%% Starts a new client process and returns its UUID
+get_client(Name) ->
+    Uuid = bchat_util:random_uuid(),
+    {ok, _} = supervisor:start_child(bchat_client_sup, [{Name, Uuid}]),
+    {ok, Uuid}.
 
-%% Starts a new room process registered as atom `Name`.
-get_room(Name) when is_atom(Name) ->
-    start_proc({bchat_room_sup, Name}).
+%% Gets (starts) room process registered as `Uuid`
+get_room(Uuid) ->
+    case gproc:where({n, l, {room, Uuid}}) of
+        undefined ->
+            {ok, _} = supervisor:start_child(bchat_room_sup, [Uuid]);
+        _ -> 
+            ok
+    end,
+    {ok, Uuid}.
 
 %% `Client` joins chat room `Room`.  In theory will return chat history.
 join_room(Client, Room) ->
@@ -21,20 +29,4 @@ leave_room(Client, Room) ->
 
 %% `Client` sends `Msg` to all members of `Room`.
 send_msg(Client, Room, Msg) ->
-    case gen_server:call(Room, {send_msg, Client, Msg}) of
-        not_member ->
-            io:format("Can't send msg: ~p is not a member of ~p.~n", [Client, Room]);
-        R ->
-            R
-    end.
-
-%%% PRIVATE
-start_proc({Sup, Name}) ->
-    case whereis(Name) of
-        undefined ->
-            supervisor:start_child(Sup, [Name]),
-            Name;
-        _ ->
-            io:format("Sorry this name is not available.~n"),
-            ok
-    end.
+    gen_server:call(Room, {send_msg, Client, Msg}).

@@ -7,12 +7,13 @@
 -define(CB, cowboy_http_req).
 
 init({tcp, http}, Req, _Opts) ->
-    {[Client|[Path|_]], Req2} = ?CB:path(Req),
-    Client2 = binary_to_atom(Client, utf8),
+    {[Path|_], Req2} = ?CB:path(Req),
+    {Params, Req3} = ?CB:body_qs(Req2),
     
     %% loop on poll requests, otherwise pass on to the handlers
     case Path of 
         <<"poll">> ->
+            handle_poll({Params})
             ok = gen_server:call(Client2, {listen, self()}),
             {loop, Req2, {Client2, Path}, ?TIMEOUT, hibernate};
         _ ->

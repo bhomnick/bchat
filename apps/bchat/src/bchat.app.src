@@ -8,7 +8,8 @@
             bchat_room_sup, 
             bchat_client, 
             bchat_room,
-            bchat_http
+            bchat_http,
+            bchat_util
         ]},
         {registered, [bchat]},
         {mod, {bchat_app, []}}
