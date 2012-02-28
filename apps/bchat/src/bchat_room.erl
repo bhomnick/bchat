@@ -13,7 +13,7 @@
 -define(HISTORY_LEN, 5).
 -record(state, {
     uuid, 
-    clients=sets:new(), 
+    clients=dict:new(), 
     history=queue:new()
 }).
 
@@ -36,7 +36,7 @@ start_link(Args) ->
 %% @end
 %%--------------------------------------------------------------------
 init(Uuid) ->
-    gproc:reg({n, l, {room, Uuid}}),
+    gproc:reg(?GRM(Uuid)),
     {ok, #state{uuid=Uuid}}.
 
 %%--------------------------------------------------------------------
@@ -56,19 +56,16 @@ init(Uuid) ->
 handle_call({test, Message}, _From, State) ->
     io:format("Call: ~p~n", [Message]),
     {reply, ok, State};
-handle_call({join_room, Client}, _From, S=#state{clients=C, history=H, uuid=U}) ->
-    io:format("* Sending room history to ~p~n.", [Client]),
+handle_call({join_room, Client, Nickname}, _From, S=#state{clients=C, history=H, uuid=U}) ->
     send_history(Client, H, U),
-    NewS = S#state{clients=sets:add_element(Client, C)},
-    {reply, ok, NewS};
-handle_call({leave_room, Client}, _From, S=#state{clients=C}) ->
-    NewS = S#state{clients=sets:del_element(Client, C)},
+    NewS = S#state{clients=dict:store(Client, Nickname, C)},
     {reply, ok, NewS};
 handle_call({send_msg, Client, Msg}, _From, S=#state{history=H, clients=C, uuid=U}) ->
-    case sets:is_element(Client, C) of
+    case dict:is_key(Client, C) of
         true ->
-            NewH = enqueue({Client, Msg}, H, ?HISTORY_LEN),
-            send_msgs(C, Client, U, Msg),
+            Nickname = dict:fetch(Client, C),
+            NewH = enqueue({Nickname, Msg}, H, ?HISTORY_LEN),
+            send_msgs(C, Nickname, U, Msg),
             {reply, ok, S#state{history=NewH}};
         false ->
             {reply, not_member, S}
@@ -87,9 +84,6 @@ handle_call(Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({test, Message}, State) ->
-    io:format("Cast: ~p~n", [Message]),
-    {noreply, State};
 handle_cast(Msg, State) ->
     ?INFO({unexpected_cast, Msg}),
     {noreply, State}.
@@ -149,7 +143,7 @@ send_history(To, H, Room) ->
 
 %% Send the same message to multiple clients
 send_msgs(Clients, From, Room, Msg) ->
-    sets:fold(fun(To, _) -> send_msg(To, From, Room, Msg), ok end, ok, Clients).
+    dict:fold(fun(To, _, _) -> send_msg(To, From, Room, Msg), ok end, ok, Clients).
 
 %% Actually send a message
 send_msg(To, From, Room, Msg) ->

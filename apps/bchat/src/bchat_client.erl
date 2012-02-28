@@ -13,7 +13,6 @@
     terminate/2, code_change/3]).
 
 -record(state, {
-    name,
     uuid,
     cache=[],
     listener=none
@@ -37,9 +36,9 @@ start_link(Args) ->
 %% {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init({Name, Uuid}) ->
-    gproc:reg({n, l, {client, Uuid}}),
-    {ok, #state{name=Name, uuid=Uuid}}.
+init(Uuid) ->
+    gproc:reg(?GCL(Uuid)),
+    {ok, #state{uuid=Uuid}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -56,7 +55,6 @@ init({Name, Uuid}) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({listen, Pid}, _From, S=#state{cache=C}) when C =/= [] ->
-    io:format("flushing~n"),
     NewS = flush_cache(S#state{listener=Pid}),
     {reply, ok, NewS};
 handle_call({listen, Pid}, _From, S) ->
@@ -139,7 +137,7 @@ flush_cache(S=#state{listener=L, cache=C}) ->
 %% atom, atom, binary
 format_msg({From, Room, Msg}) ->
     [
-        {<<"from">>, atom_to_binary(From, utf8)},
-        {<<"room">>, atom_to_binary(Room, utf8)},
-        {<<"msg">>, Msg}
+        {from, From},
+        {room, Room},
+        {msg, Msg}
     ].

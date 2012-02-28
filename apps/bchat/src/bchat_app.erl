@@ -7,6 +7,8 @@
 -export([start/2, stop/1]).
 
 start() ->
+    ok = application:start(compiler),
+    ok = application:start(syntax_tools),
     ok = application:start(lager),
     ok = application:start(cowboy),
     ok = application:start(gproc),

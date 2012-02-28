@@ -3,6 +3,8 @@
 
 -export([get_client/2, get_room/2, join_room/2, send_msg/2]).
 
+-include("bchat.hrl").
+
 -define(TIMEOUT, 30000).
 -define(CB, cowboy_http_req).
 
@@ -10,53 +12,73 @@ init({tcp, http}, Req, _Opts) ->
     {[Path|_], Req2} = ?CB:path(Req),
     {Params, Req3} = ?CB:body_qs(Req2),
     
+    %% Do we want to pull the client Pid out here or leave it up to the handlers
+    %% to deal with?  Some requests can be anonymous, but most are going to 
+    %% want a running client process...
+    CPid = case proplists:get_value(<<"cid">>, Params) of
+        undefined ->
+            undefined;
+        Uuid ->
+            gproc:where(?GCL(Uuid))
+    end,
+
     %% loop on poll requests, otherwise pass on to the handlers
     case Path of 
         <<"poll">> ->
-            handle_poll({Params})
-            ok = gen_server:call(Client2, {listen, self()}),
-            {loop, Req2, {Client2, Path}, ?TIMEOUT, hibernate};
+            handle_poll(Req3, {CPid, Params, Path});
         _ ->
-            {ok, Req2, {Client2, Path}}
+            {ok, Req3, {CPid, Params, Path}}
     end.
 
 %% handle everything but poll requests
-handle(Req, S={C, P}) ->
-    {Params, Req2} = ?CB:body_qs(Req),
-    Resp = erlang:apply(?MODULE, binary_to_atom(P, utf8), [C, Params]),
-    {ok, Req3} = ?CB:reply(200, [], jsx:to_json(Resp), Req2),
-    {ok, Req3, S}.
+handle(Req, S={CPid, Params, Path}) ->
+    Resp = erlang:apply(?MODULE, binary_to_atom(Path, utf8), [CPid, Params]),
+    {ok, Req2} = ?CB:reply(200, [], jsx:to_json(Resp), Req),
+    {ok, Req2, S}.
 
-%% poll responses only
-info({reply, Body}, Req, Client) ->
+%% handle poll requests
+handle_poll(Req, {CPid, Params, Path}) when CPid =/= undefined ->
+    ok = gen_server:call(CPid, {listen, self()}),
+    {loop, Req, {CPid, Params, Path}, ?TIMEOUT, hibernate};
+handle_poll(Req, S={undefined, _, _}) ->
+    {ok, Req2} = cowboy_http_req:reply(400, [], "Invalid client ID.", Req),
+    {shutdown, Req2, S}.
+
+%% poll responses
+info({reply, Body}, Req, State) ->
     {ok, Req2} = cowboy_http_req:reply(200, [], term_to_binary(Body), Req),
-    {ok, Req2, Client};
+    {ok, Req2, State};
 info(_Message, Req, State) ->
     {loop, Req, State, hibernate}.
 
-terminate(_Req, {none, _}) ->
+terminate(_Req, {undefined, _, _}) ->
     ok;
-terminate(_Req, {Client, _}) ->
-    ok = gen_server:call(Client, {unlisten, self()}),
+terminate(_Req, {CPid, _, _}) ->
+    gen_server:call(CPid, {unlisten, self()}),
     ok.
 
 %% the actual handlers!
-%% these get the requested client (could be none!) and a proplist of post params, 
+%% these get the client Pid (could be 'undefined'!) and a proplist of post params, 
 %% response should be jsx:to_json-able
 
-get_client(_, Params) ->
-    Name = binary_to_atom(proplists:get_value(<<"name">>, Params), utf8),
-    atom_to_binary(bchat:get_client(Name), utf8).
+get_client(_, _) ->
+    {ok, Uuid} = bchat:get_client(),
+    [{cid, Uuid}].
 
 get_room(_, Params) ->
-    Room = binary_to_atom(proplists:get_value(<<"room">>, Params), utf8),
-    atom_to_binary(bchat:get_room(Room), utf8).
+    {ok, Uuid} = bchat:get_room(proplists:get_value(<<"rid">>, Params)),
+    [{rid, Uuid}].
+    
+join_room(CPid, Params) ->
+    RoomUuid = proplists:get_value(<<"rid">>, Params),
+    Nickname = proplists:get_value(<<"nickname">>, Params),
+    RPid = gproc:where(?GRM(RoomUuid)),
+    ok = bchat:join_room(CPid, RPid, Nickname),
+    [{rid, RoomUuid}, {nickname, Nickname}].
 
-join_room(C, Params) ->
-    Room = binary_to_atom(proplists:get_value(<<"room">>, Params), utf8),
-    atom_to_binary(bchat:join_room(C, Room), utf8).
-
-send_msg(C, Params) ->
-    Room = binary_to_atom(proplists:get_value(<<"room">>, Params), utf8),
+send_msg(CPid, Params) ->
+    RoomUuid = proplists:get_value(<<"rid">>, Params),
+    RPid = gproc:where(?GRM(RoomUuid)),
     Msg = proplists:get_value(<<"msg">>, Params),
-    atom_to_binary(bchat:send_msg(C, Room, Msg), utf8).
+    ok = bchat:send_msg(CPid, RPid, Msg),
+    <<"ok">>.
