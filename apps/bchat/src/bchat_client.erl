@@ -77,8 +77,8 @@ handle_call(Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({msg, From, Room, Msg}, S=#state{cache=C}) ->
-    NewS = flush_cache(S#state{cache=[{From, Room, Msg}|C]}),
+handle_cast({msg, From, Rid, Msg, Timestamp}, S=#state{cache=C}) ->
+    NewS = flush_cache(S#state{cache=[{From, Rid, Msg, Timestamp}|C]}),
     {noreply, NewS};
 handle_cast(Msg, State) ->
     ?INFO({unexpected_cast, Msg}),
@@ -135,9 +135,11 @@ flush_cache(S=#state{listener=L, cache=C}) ->
 
 %% Makes jsx happy!
 %% atom, atom, binary
-format_msg({From, Room, Msg}) ->
+format_msg({From, Rid, Msg, Timestamp}) ->
     [
+        {key, <<"bchat:msg">>},
         {from, From},
-        {room, Room},
-        {msg, Msg}
+        {rid, Rid},
+        {msg, Msg},
+        {timestamp, Timestamp}
     ].

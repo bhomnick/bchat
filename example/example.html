@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>BChat!</title>
+    <meta name="description" content="BChat Example">
+    <meta name="author" content="Ben Homnick <bhomnick@gmail.com>">
+
+    <!-- Le styles -->
+    <link href="http://twitter.github.com/bootstrap/assets/css/bootstrap.css" rel="stylesheet">
+    <style>
+      body {
+        padding-top: 60px; /* 60px to make the container go all the way to the bottom of the topbar */
+      }
+    </style>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+    <script src="jquery.comet.js"></script>
+
+  </head>
+
+  <body>
+
+    <div class="navbar navbar-fixed-top">
+      <div class="navbar-inner">
+        <div class="container">
+          <a class="brand" href="/">BChat!</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="container">
+      <form class="well form-inline">
+        <input type="text" name="nickname" id="nickname" placeholder="Nickname" disabled=true>
+        <input type="submit" name="join_room" value="Join Room" id="join-room" disabled=true>
+      </form>
+      
+      <ul id="messages"></ul>
+      
+      <form class="well form-inline" id="msg-form" style="display: none;">
+        <input type="text" name="msg" id="msg" placeholder="Message">
+        <input type="submit" name="send_msg" value="Send Message" id="send-msg">
+      </form>
+    </div>
+
+    <script>
+    $(document).ready(function() {
+      
+      bBASE_URL = "http://localhost:8096";
+      bCHAT_ROOM = "chatroomlol";
+      
+      $.comet.init(bBASE_URL, cometInit);
+      
+      $("#join-room").click(function(e) {
+        e.preventDefault();
+        var nick = $("#nickname").val();
+        if(nick != "")
+          joinRoom(nick);
+      });
+      
+      $("#send-msg").click(function(e) {
+        e.preventDefault();
+        var msg = $("#msg").val();
+        if(msg != "") {
+          sendMsg(msg);
+          $("#msg").val("");
+        }
+      });
+      
+      function log(msg) {
+        $stub = $("<li></li>").text(msg);
+        $("#messages").append($stub);
+      }
+      
+      function cometInit() {
+        log("[System] Got client ID: " + $.comet.cid);
+        getRoom();
+      }
+      
+      function getRoom() {
+        $.ajax($.comet.baseUrl + "/get_room", {
+          data: {rid: bCHAT_ROOM},
+          type: 'POST',
+          dataType: 'json',
+          success: function(data) {
+            log("[System] Found room: " + data.rid);
+            $("#nickname, #join-room").removeAttr('disabled');
+          }
+        });
+      }
+      
+      function joinRoom(nickname) {
+        $.ajax($.comet.baseUrl + "/join_room", {
+          data: {cid: $.comet.cid, rid: bCHAT_ROOM, nickname: nickname},
+          type: 'POST',
+          dataType: 'json',
+          success: function(data) {
+            log("[System] Joined room with nickname: " + nickname);
+            $("#nickname, #join-room").attr("disabled", "true");
+            $("#msg-form").show();
+          }
+        });
+      }
+    
+      function sendMsg(msg) {
+        $.ajax($.comet.baseUrl + "/send_msg", {
+          data: {cid: $.comet.cid, rid: bCHAT_ROOM, msg: msg},
+          type: 'POST',
+        });
+      }
+    
+      function recMsg(obj) {
+        log("[" + obj.from + "] " + obj.msg);
+      }
+      
+      $.comet.callbacks['bchat:msg'] = recMsg;
+        
+    });
+    </script>
+
+
+  </body>
+</html>

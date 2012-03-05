@@ -1,5 +1,5 @@
 -module(bchat_util).
--export([parse_uuid/1, format_uuid/1, random_uuid/0]).
+-export([parse_uuid/1, format_uuid/1, random_uuid/0, unix_now/0]).
 
 %% UUID tools
 %% Thanks https://github.com/brendonh
@@ -19,3 +19,7 @@ random_uuid() ->
      (random:uniform(4294967296) - 1):32,
      (random:uniform(4294967296) - 1):32,
      (random:uniform(4294967296) - 1):32>>.
+
+unix_now() ->
+    {M, S, _} = now(),
+    M*1000000 + S.

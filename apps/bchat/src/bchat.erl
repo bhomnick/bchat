@@ -1,6 +1,8 @@
 -module(bchat).
 -export([get_client/0, get_room/1, join_room/3, send_msg/3]).
 
+-include("bchat.hrl").
+
 %%% PUBLIC API
 
 %% Starts a new client process and returns its UUID
@@ -23,9 +25,11 @@ get_room(Uuid) ->
 %% be a binary string.
 
 %% `Client` joins chat room `Room`.
-join_room(Client, Room, Nickname) ->
-    gen_server:call(Room, {join_room, Client, Nickname}).
+join_room(Cid, Rid, Nickname) ->
+    RPid = gproc:where(?GRM(Rid)),
+    gen_server:call(RPid, {join_room, Cid, Nickname}).
 
 %% `Client` sends `Msg` to all members of `Room`.
-send_msg(Client, Room, Msg) ->
-    gen_server:call(Room, {send_msg, Client, Msg}).
+send_msg(Cid, Rid, Msg) ->
+    RPid = gproc:where(?GRM(Rid)),
+    gen_server:call(RPid, {send_msg, Cid, Msg}).

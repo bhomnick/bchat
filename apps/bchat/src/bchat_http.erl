@@ -1,7 +1,7 @@
 -module(bchat_http).
 -export([init/3, handle/2, info/3, terminate/2]).
 
--export([get_client/2, get_room/2, join_room/2, send_msg/2]).
+-export([get_client/1, get_room/1, join_room/1, send_msg/1]).
 
 -include("bchat.hrl").
 
@@ -11,42 +11,39 @@
 init({tcp, http}, Req, _Opts) ->
     {[Path|_], Req2} = ?CB:path(Req),
     {Params, Req3} = ?CB:body_qs(Req2),
-    
-    %% Do we want to pull the client Pid out here or leave it up to the handlers
-    %% to deal with?  Some requests can be anonymous, but most are going to 
-    %% want a running client process...
-    CPid = case proplists:get_value(<<"cid">>, Params) of
-        undefined ->
-            undefined;
-        Uuid ->
-            gproc:where(?GCL(Uuid))
-    end,
+    CPid = gproc:where(?GCL(proplists:get_value(<<"cid">>, Params))),
+
+    %% set headers
+    {ok, Req4} = ?CB:set_resp_header(<<"Access-Control-Allow-Origin">>, <<"*">>, Req3),
+    {ok, Req5} = ?CB:set_resp_header(<<"Access-Control-Allow-Headers">>, 
+        <<"Origin, X-Requested-With, Accept">>, Req4),
 
     %% loop on poll requests, otherwise pass on to the handlers
     case Path of 
         <<"poll">> ->
-            handle_poll(Req3, {CPid, Params, Path});
+            handle_poll(Req5, {CPid, Params, Path});
         _ ->
-            {ok, Req3, {CPid, Params, Path}}
+            {ok, Req5, {CPid, Params, Path}}
     end.
 
 %% handle everything but poll requests
-handle(Req, S={CPid, Params, Path}) ->
-    Resp = erlang:apply(?MODULE, binary_to_atom(Path, utf8), [CPid, Params]),
-    {ok, Req2} = ?CB:reply(200, [], jsx:to_json(Resp), Req),
+handle(Req, S={_, Params, Path}) ->
+    Resp = erlang:apply(?MODULE, binary_to_atom(Path, utf8), [Params]),
+    {ok, Req2} = ?CB:reply(200, [{'Content-Type', <<"application/json">>}], jsx:to_json(Resp), Req),
     {ok, Req2, S}.
 
 %% handle poll requests
-handle_poll(Req, {CPid, Params, Path}) when CPid =/= undefined ->
-    ok = gen_server:call(CPid, {listen, self()}),
-    {loop, Req, {CPid, Params, Path}, ?TIMEOUT, hibernate};
 handle_poll(Req, S={undefined, _, _}) ->
     {ok, Req2} = cowboy_http_req:reply(400, [], "Invalid client ID.", Req),
-    {shutdown, Req2, S}.
+    {shutdown, Req2, S};
+handle_poll(Req, {CPid, Params, Path}) ->
+    ok = gen_server:call(CPid, {listen, self()}),
+    {loop, Req, {CPid, Params, Path}, ?TIMEOUT, hibernate}.
+
 
 %% poll responses
 info({reply, Body}, Req, State) ->
-    {ok, Req2} = cowboy_http_req:reply(200, [], term_to_binary(Body), Req),
+    {ok, Req2} = cowboy_http_req:reply(200, [{'Content-Type', <<"application/json">>}], Body, Req),
     {ok, Req2, State};
 info(_Message, Req, State) ->
     {loop, Req, State, hibernate}.
@@ -58,27 +55,30 @@ terminate(_Req, {CPid, _, _}) ->
     ok.
 
 %% the actual handlers!
-%% these get the client Pid (could be 'undefined'!) and a proplist of post params, 
-%% response should be jsx:to_json-able
+%% these get a proplist of post params, response should be jsx:to_json-able
 
-get_client(_, _) ->
+get_client(_) ->
     {ok, Uuid} = bchat:get_client(),
     [{cid, Uuid}].
 
-get_room(_, Params) ->
+get_room(Params) ->
     {ok, Uuid} = bchat:get_room(proplists:get_value(<<"rid">>, Params)),
     [{rid, Uuid}].
     
-join_room(CPid, Params) ->
-    RoomUuid = proplists:get_value(<<"rid">>, Params),
+join_room(Params) ->
+    Rid = proplists:get_value(<<"rid">>, Params),
     Nickname = proplists:get_value(<<"nickname">>, Params),
-    RPid = gproc:where(?GRM(RoomUuid)),
-    ok = bchat:join_room(CPid, RPid, Nickname),
-    [{rid, RoomUuid}, {nickname, Nickname}].
+    ok = bchat:join_room(
+        proplists:get_value(<<"cid">>, Params),
+        Rid,
+        Nickname
+    ),
+    [{rid, Rid}, {nickname, Nickname}].
 
-send_msg(CPid, Params) ->
-    RoomUuid = proplists:get_value(<<"rid">>, Params),
-    RPid = gproc:where(?GRM(RoomUuid)),
-    Msg = proplists:get_value(<<"msg">>, Params),
-    ok = bchat:send_msg(CPid, RPid, Msg),
+send_msg(Params) ->
+    ok = bchat:send_msg(
+        proplists:get_value(<<"cid">>, Params),
+        proplists:get_value(<<"rid">>, Params),
+        proplists:get_value(<<"msg">>, Params)
+    ),
     <<"ok">>.

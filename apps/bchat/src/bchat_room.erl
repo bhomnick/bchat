@@ -17,6 +17,12 @@
     history=queue:new()
 }).
 
+-record(msg, {
+    from,
+    body,
+    timestamp
+}).
+
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
@@ -56,16 +62,20 @@ init(Uuid) ->
 handle_call({test, Message}, _From, State) ->
     io:format("Call: ~p~n", [Message]),
     {reply, ok, State};
-handle_call({join_room, Client, Nickname}, _From, S=#state{clients=C, history=H, uuid=U}) ->
-    send_history(Client, H, U),
-    NewS = S#state{clients=dict:store(Client, Nickname, C)},
+handle_call({join_room, Cid, Nickname}, _From, S=#state{clients=C, history=H, uuid=U}) ->
+    send_history(Cid, H, U),
+    NewS = S#state{clients=dict:store(Cid, Nickname, C)},
     {reply, ok, NewS};
-handle_call({send_msg, Client, Msg}, _From, S=#state{history=H, clients=C, uuid=U}) ->
+handle_call({send_msg, Client, Body}, _From, S=#state{history=H, clients=C, uuid=U}) ->
     case dict:is_key(Client, C) of
         true ->
-            Nickname = dict:fetch(Client, C),
-            NewH = enqueue({Nickname, Msg}, H, ?HISTORY_LEN),
-            send_msgs(C, Nickname, U, Msg),
+            Msg = #msg{
+                from=dict:fetch(Client, C), 
+                body=Body, 
+                timestamp=bchat_util:unix_now()
+            },
+            NewH = enqueue(Msg, H, ?HISTORY_LEN),
+            send_msgs(C, U, Msg),
             {reply, ok, S#state{history=NewH}};
         false ->
             {reply, not_member, S}
@@ -132,22 +142,22 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% Send chat history to client
-send_history(To, H, Room) ->
+send_history(Cid, H, Rid) ->
     case queue:out_r(H) of
         {empty, _} ->
             ok;
-        {{value, {From, Msg}}, NewQ} ->
-            send_msg(To, From, Room, Msg),
-            send_history(To, NewQ, Room)
+        {{value, Msg}, NewQ} ->
+            send_msg(Cid, Rid, Msg),
+            send_history(Cid, NewQ, Rid)
     end.
 
 %% Send the same message to multiple clients
-send_msgs(Clients, From, Room, Msg) ->
-    dict:fold(fun(To, _, _) -> send_msg(To, From, Room, Msg), ok end, ok, Clients).
+send_msgs(Clients, Rid, Msg) ->
+    dict:fold(fun(Cid, _, _) -> send_msg(Cid, Rid, Msg), ok end, ok, Clients).
 
 %% Actually send a message
-send_msg(To, From, Room, Msg) ->
-    gen_server:cast(To, {msg, From, Room, Msg}).
+send_msg(Cid, Rid, #msg{from=From, body=Body, timestamp=Timestamp}) ->
+    gen_server:cast(gproc:where(?GCL(Cid)), {msg, From, Rid, Body, Timestamp}).
 
 %% Enqueues `Item` to `Queue` while keeping the length of the resulting Queue
 %% at most `Max`
@@ -160,4 +170,3 @@ enqueue(Item, Queue, Max) ->
         _ -> 
             Pushed
     end.
-    
